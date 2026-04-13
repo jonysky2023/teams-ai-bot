@@ -6,7 +6,7 @@ from anthropic import Anthropic
 
 
 # =========================
-# ENV VARIABLES (Vercel)
+# ENV VARIABLES
 # =========================
 FLEXXIBLE_BASE_URL = os.environ["FLEXXIBLE_BASE_URL"]
 FLEXXIBLE_USER = os.environ["FLEXXIBLE_USER"]
@@ -18,7 +18,7 @@ client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
 # =========================
-# BASIC AUTH
+# AUTH BASIC
 # =========================
 def get_basic_auth_header():
     credentials = f"{FLEXXIBLE_USER}:{FLEXXIBLE_PASS}"
@@ -27,7 +27,26 @@ def get_basic_auth_header():
 
 
 # =========================
-# IA (CLAUDE GENERA TODO EL BODY)
+# PARSE BODY (IMPORTANT VERCEL FIX)
+# =========================
+def parse_body(request):
+    try:
+        body = request.get("body")
+
+        if not body:
+            return {}
+
+        if isinstance(body, str):
+            return json.loads(body)
+
+        return body
+
+    except:
+        return {}
+
+
+# =========================
+# CLAUDE
 # =========================
 def interpretar(text):
 
@@ -38,25 +57,18 @@ def interpretar(text):
             {
                 "role": "user",
                 "content": f"""
-Eres un generador de requests para una API IT.
-
-Devuelve SOLO JSON válido con esta estructura:
+Devuelve SOLO JSON válido:
 
 {{
   "baseurl_path": "/runMicroserviceAsTask?apiversion=1",
   "body": {{
     "displayname": "string",
     "MicroserviceId": "66e1466f51dcb8b8d0f7a948",
-    "FLXUniqueIDList": "string",
+    "FLXUniqueIDList": "bf3c245bf5a2ce7ae67e1b12bc29a731ba4433f7da57211fa21c27c7f9a1808a",
     "SNOWEnvironmentList": "",
     "WorkspaceGroupIDList": ""
   }}
 }}
-
-REGLAS:
-- No texto adicional
-- Solo JSON válido
-- Inferir valores desde el mensaje del usuario
 
 Mensaje:
 {text}
@@ -69,52 +81,41 @@ Mensaje:
 
 
 # =========================
-# EXECUTE API CALL
+# EXEC API
 # =========================
 def ejecutar(payload):
 
     url = FLEXXIBLE_BASE_URL + payload["baseurl_path"]
 
-    try:
-        r = requests.post(
-            url,
-            json=payload["body"],
-            headers={
-                "Authorization": get_basic_auth_header(),
-                "Content-Type": "application/json"
-            },
-            timeout=20
-        )
+    r = requests.post(
+        url,
+        json=payload["body"],
+        headers={
+            "Authorization": get_basic_auth_header(),
+            "Content-Type": "application/json"
+        },
+        timeout=20
+    )
 
-        return {
-            "status": "ok",
-            "http_status": r.status_code,
-            "response": r.text
-        }
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+    return {
+        "status": "ok",
+        "http": r.status_code,
+        "response": r.text
+    }
 
 
 # =========================
-# VERCEL HANDLER
+# VERCEL ENTRYPOINT (CORRECTO)
 # =========================
 def handler(request):
 
     try:
-        body = request.get_json(silent=True) or {}
+        body = parse_body(request)
         text = body.get("text", "")
 
-        # 1. Claude genera request completo
         payload = interpretar(text)
-
-        # 2. Ejecutar request generado
         result = ejecutar(payload)
 
-        # 3. respuesta final
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
@@ -133,5 +134,7 @@ def handler(request):
                 "error": str(e)
             })
         }
-# IMPORTANTE: Vercel necesita export explícito del handler
+
+
+# 🔥 REQUIRED EXPORT FOR VERCEL
 app = handler
