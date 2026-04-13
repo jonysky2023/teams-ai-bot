@@ -2,23 +2,22 @@ from flask import Flask, request, jsonify
 from anthropic import Anthropic
 import os
 
-# Crear app Flask
 app = Flask(__name__)
 
-# Cliente de Anthropic (usa variable de entorno en Vercel)
+# Cliente Anthropic (usa variable de entorno en Vercel)
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 
 @app.route("/api", methods=["POST"])
 def handle():
     try:
-        # Leer JSON de entrada
+        # Leer request
         data = request.get_json()
         text = data.get("text", "")
 
-        # Llamada a Claude Sonnet
+        # Llamada a Claude (modelo accesible)
         response = client.messages.create(
-            model="claude-3-5-sonnet-latest",
+            model="claude-3-haiku-20240307",
             max_tokens=200,
             messages=[
                 {
@@ -43,7 +42,6 @@ Responde SOLO JSON válido.
             ]
         )
 
-        # Respuesta del modelo
         result_text = response.content[0].text
 
         return jsonify({
@@ -58,5 +56,5 @@ Responde SOLO JSON válido.
         }), 500
 
 
-# 🔥 IMPORTANTE: exportar app para Vercel
+# 🔥 necesario para Vercel
 app = app
