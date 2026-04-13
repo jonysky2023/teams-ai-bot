@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/message.py": {
+      "runtime": "python3.11"
+    }
+  }
+}
