@@ -1,37 +1,53 @@
-# Imports necesarios
-# Flask para el API, Anthropic para IA, requests para llamadas HTTP externas
 from flask import Flask, request, jsonify
 from anthropic import Anthropic
 import os
 import json
 import requests
+import base64
 
-# Inicialización de la aplicación Flask
+# =========================
+# INIT APP
+# =========================
 app = Flask(__name__)
 
-# Variables de entorno (Vercel)
-# Claves sensibles almacenadas fuera del código
+# =========================
+# ENV VARIABLES (Vercel)
+# =========================
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
-FLEXXIBLE_BASIC_TOKEN = os.environ["FLEXXIBLE_BASIC_TOKEN"]
 
-# Cliente de Anthropic inicializado con API key
+FLEXXIBLE_BASE_URL = os.environ["FLEXXIBLE_BASE_URL"]
+FLEXXIBLE_USER = os.environ["FLEXXIBLE_USER"]
+FLEXXIBLE_PASS = os.environ["FLEXXIBLE_PASS"]
+
+# Anthropic client
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# Función encargada de ejecutar acciones contra la API de Flexxible
-# Recibe el JSON generado por la IA y lo traduce a una llamada HTTP
+
+# =========================
+# BASIC AUTH BUILDER
+# =========================
+def get_basic_auth_header():
+    credentials = f"{FLEXXIBLE_USER}:{FLEXXIBLE_PASS}"
+    encoded = base64.b64encode(credentials.encode()).decode()
+    return f"Basic {encoded}"
+
+
+# =========================
+# FLEXXIBLE API CALL
+# =========================
 def ejecutar_accion(data):
     try:
         accion = data.get("accion")
 
-        # Routing de acciones según tipo detectado por la IA
+        # Routing de acciones
         if accion == "reiniciar_servicio":
-            url = "https://tu-api/restart"
+            url = f"{FLEXXIBLE_BASE_URL}/restart"
 
         elif accion == "ejecutar_script":
-            url = "https://tu-api/script"
+            url = f"{FLEXXIBLE_BASE_URL}/script"
 
         elif accion == "estado":
-            url = "https://tu-api/status"
+            url = f"{FLEXXIBLE_BASE_URL}/status"
 
         else:
             return {
@@ -39,12 +55,12 @@ def ejecutar_accion(data):
                 "reason": "accion desconocida"
             }
 
-        # Llamada HTTP a la API externa con autenticación Basic
+        # HTTP request a API externa
         response = requests.post(
             url,
             json=data,
             headers={
-                "Authorization": f"Basic {FLEXXIBLE_BASIC_TOKEN}",
+                "Authorization": get_basic_auth_header(),
                 "Content-Type": "application/json"
             },
             timeout=15
@@ -61,16 +77,20 @@ def ejecutar_accion(data):
             "error": str(e)
         }
 
-# Endpoint principal del chatbot
-# Recibe texto del usuario, lo procesa con IA y ejecuta acciones
+
+# =========================
+# MAIN ENDPOINT
+# =========================
 @app.route("/api", methods=["POST"])
 def handle():
     try:
-        # Lectura del cuerpo de la petición
+        # Leer request
         data = request.get_json()
         text = data.get("text", "")
 
-        # Llamada al modelo de IA para interpretar el texto
+        # =========================
+        # IA: INTERPRETACIÓN
+        # =========================
         response = client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=300,
@@ -80,13 +100,13 @@ def handle():
                     "content": f"""
 Eres un sistema de gestión de incidencias IT.
 
-Convierte el mensaje en JSON válido con estructura:
+Convierte el mensaje en JSON válido:
 
-{
+{{
   "accion": "reiniciar_servicio | ejecutar_script | estado | desconocido",
   "dispositivo": "string",
   "descripcion": "string breve"
-}
+}}
 
 Mensaje:
 {text}
@@ -97,16 +117,16 @@ Responde SOLO JSON sin texto adicional.
             ]
         )
 
-        # Respuesta cruda del modelo
+        # Resultado IA
         result_text = response.content[0].text
 
-        # Conversión de string JSON a objeto Python
+        # Parse JSON
         parsed = json.loads(result_text)
 
-        # Ejecución de la acción en el sistema externo
+        # Ejecutar acción en sistema externo
         execution = ejecutar_accion(parsed)
 
-        # Respuesta final del endpoint
+        # Respuesta final
         return jsonify({
             "ok": True,
             "interpreted": parsed,
@@ -114,11 +134,13 @@ Responde SOLO JSON sin texto adicional.
         })
 
     except Exception as e:
-        # Manejo global de errores
         return jsonify({
             "ok": False,
             "error": str(e)
         }), 500
 
-# Punto de entrada requerido por Vercel
+
+# =========================
+# VERCEL ENTRYPOINT
+# =========================
 app = app
