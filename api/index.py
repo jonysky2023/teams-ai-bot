@@ -133,3 +133,5 @@ def handler(request):
                 "error": str(e)
             })
         }
+# IMPORTANTE: Vercel necesita export explícito del handler
+app = handler
