@@ -2,6 +2,10 @@ from flask import Flask, request, jsonify
 from anthropic import Anthropic
 import os
 import requests
+import sys
+
+# 🔥 FIX VERCEL IMPORTS
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from tools import tools
 from workspaces import find_workspace
