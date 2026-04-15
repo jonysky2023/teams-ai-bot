@@ -3,6 +3,9 @@ from anthropic import Anthropic
 import os
 import requests
 
+from tools import tools
+from workspaces import find_workspace
+
 app = Flask(__name__)
 
 # 🔑 API KEY
@@ -18,19 +21,18 @@ def slack_handler():
     data = request.get_json()
 
     # =========================
-    # 1. SLACK URL VERIFICATION (OBLIGATORIO)
+    # 1. SLACK URL VERIFICATION
     # =========================
     if data.get("type") == "url_verification":
         return jsonify({"challenge": data["challenge"]})
 
 
     # =========================
-    # 2. EXTRAER TEXTO (Slack o Postman)
+    # 2. EXTRAER TEXTO
     # =========================
     text = ""
     channel = None
 
-    # Slack event
     if "event" in data:
         event = data["event"]
 
@@ -41,7 +43,6 @@ def slack_handler():
         text = event.get("text", "")
         channel = event.get("channel")
 
-    # Postman / test manual
     else:
         text = data.get("text", "")
 
@@ -50,39 +51,68 @@ def slack_handler():
 
 
     # =========================
-    # 3. IA (Anthropic Claude)
+    # 3. CLAUDE CON TOOLS
     # =========================
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=900,
+        max_tokens=500,
+        tools=tools,
         messages=[
             {
                 "role": "user",
                 "content": f"""
-Eres un sistema IT.
+El usuario puede pedir información de dispositivos.
 
-Convierte el mensaje en JSON:
-
-{{
-  "accion": "reiniciar_servicio | ejecutar_script | estado | desconocido",
-  "dispositivo": "string",
-  "descripcion": "string breve"
-}}
+Si pide datos de un equipo, DEBES usar la tool get_workspace_info.
 
 Mensaje:
 {text}
-
-Devuelve SOLO JSON válido.
 """
             }
         ]
     )
 
-    result = response.content[0].text
+
+    # =========================
+    # 4. DETECTAR TOOL CALL
+    # =========================
+    tool_call = None
+
+    for block in response.content:
+        if block.type == "tool_use":
+            tool_call = block
 
 
     # =========================
-    # 4. RESPONDER A SLACK
+    # 5. EJECUTAR TOOL
+    # =========================
+    slack_message = "No se pudo procesar la solicitud"
+
+    if tool_call:
+
+        if tool_call.name == "get_workspace_info":
+
+            device_name = tool_call.input.get("device_name")
+
+            ws = find_workspace(device_name)
+
+            if not ws:
+                slack_message = f"❌ No encontrado: {device_name}"
+            else:
+                slack_message = f"""
+💻 Dispositivo: {ws.get('Name')}
+🆔 FlexxibleMID: {ws.get('FlexxibleMID')}
+📊 Datos completos: {ws}
+"""
+
+
+    else:
+        # fallback si Claude no usa tool
+        slack_message = response.content[0].text
+
+
+    # =========================
+    # 6. RESPONDER A SLACK
     # =========================
     if channel and SLACK_BOT_TOKEN:
         try:
@@ -94,7 +124,7 @@ Devuelve SOLO JSON válido.
                 },
                 json={
                     "channel": channel,
-                    "text": result
+                    "text": slack_message
                 }
             )
         except Exception as e:
@@ -102,11 +132,11 @@ Devuelve SOLO JSON válido.
 
 
     # =========================
-    # 5. RESPUESTA HTTP NORMAL
+    # 7. RESPUESTA HTTP
     # =========================
     return jsonify({
         "ok": True,
-        "result": result
+        "response": slack_message
     })
 
 
