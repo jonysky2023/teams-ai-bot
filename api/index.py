@@ -53,8 +53,8 @@ def slack_handler():
     # 3. IA (Anthropic Claude)
     # =========================
     response = client.messages.create(
-        model="claude-3-haiku-20240307",
-        max_tokens=300,
+        model="claude-sonnet-4-6",
+        max_tokens=900,
         messages=[
             {
                 "role": "user",
