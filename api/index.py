@@ -7,35 +7,12 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from tools import tools
-from workspaces import find_workspace, get_workspace
+from workspaces import find_workspace, get_workspace, fetch_device_status
 
 app = Flask(__name__)
 
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
-
-
-def fetch_device_status(device_name: str, workspace_name: str = "default") -> dict | None:
-    config = get_workspace(workspace_name)
-    base_url = config.get("api_baseurl")
-    user = config.get("api_user")
-    password = config.get("api_pass")
-
-    if not base_url:
-        return None
-
-    try:
-        response = requests.get(
-            f"{base_url}/devices/{device_name}/status",
-            auth=(user, password),
-            timeout=10
-        )
-        if response.ok:
-            return response.json()
-        return None
-    except Exception as e:
-        print(f"Error fetching device status: {e}")
-        return None
 
 
 @app.route("/api", methods=["POST"])
@@ -60,12 +37,11 @@ def slack_handler():
     if not text:
         return jsonify({"error": "No text received"}), 400
 
-    # ✅ PROMPT CORREGIDO: sin mencionar JSON, forzar uso de tools
     response = client.messages.create(
         model="claude-sonnet-4-5",
         max_tokens=500,
         tools=tools,
-        tool_choice={"type": "auto"},  # ✅ deja a Claude elegir la tool correcta
+        tool_choice={"type": "auto"},
         system=(
             "Eres un asistente IT. Cuando el usuario pida información sobre un dispositivo "
             "SIEMPRE usa las tools disponibles. Nunca respondas con JSON en crudo. "
@@ -74,7 +50,7 @@ def slack_handler():
         messages=[
             {
                 "role": "user",
-                "content": text  # ✅ texto limpio, sin instrucciones extra que confundan
+                "content": text
             }
         ]
     )
@@ -96,9 +72,12 @@ def slack_handler():
                 slack_message = f"❌ No encontrado: *{device_name}*"
             else:
                 slack_message = (
-                    f"💻 *Dispositivo:* {ws.get('Name')}\n"
-                    f"🆔 *FlexxibleMID:* {ws.get('FlexxibleMID')}\n"
-                    f"📊 *Datos completos:* {ws}"
+                    f"💻 *Dispositivo:* {ws.get('FullName', 'N/A')}\n"
+                    f"🆔 *FlexxibleMID:* {ws.get('FlexxibleMID', 'N/A')}\n"
+                    f"👤 *Usuario:* {ws.get('UserName', 'N/A')}\n"
+                    f"🌐 *IP:* {ws.get('IP', 'N/A')}\n"
+                    f"🖥️ *OS:* {ws.get('OperatingSystem', 'N/A')}\n"
+                    f"⚡ *Estado:* {ws.get('PowerState', 'N/A')} / Agente: {ws.get('FlexxAgentStatus', 'N/A')}"
                 )
 
         elif tool_call.name == "get_device_status":
@@ -110,11 +89,15 @@ def slack_handler():
             else:
                 slack_message = (
                     f"📡 *Estado de {device_name}*\n"
-                    f"🟢 Online: {status.get('online', 'desconocido')}\n"
-                    f"🖥️ CPU: {status.get('cpu', 'N/A')}%\n"
-                    f"💾 RAM: {status.get('memory', 'N/A')}%\n"
-                    f"💿 Disco: {status.get('disk', 'N/A')}%\n"
-                    f"🕐 Última actividad: {status.get('last_seen', 'N/A')}"
+                    f"⚡ *Power / Agente:* {status.get('online', 'N/A')}\n"
+                    f"🖥️ *CPU:* {status.get('cpu', 'N/A')}%\n"
+                    f"💾 *RAM:* {status.get('memory', 'N/A')}%\n"
+                    f"💿 *Disco:* {status.get('disk', 'N/A')}\n"
+                    f"🕐 *Última actividad:* {status.get('last_seen', 'N/A')}\n"
+                    f"🛡️ *Antivirus:* {status.get('antivirus', 'N/A')}\n"
+                    f"🔄 *Último reinicio:* hace {status.get('last_restart', 'N/A')} días\n"
+                    f"🌐 *IP:* {status.get('ip', 'N/A')}\n"
+                    f"🖥️ *OS:* {status.get('os', 'N/A')}"
                 )
 
     else:
