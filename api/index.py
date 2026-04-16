@@ -17,6 +17,10 @@ SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 
 @app.route("/api", methods=["POST"])
 def slack_handler():
+    # ✅ Ignorar reintentos de Slack para evitar mensajes duplicados
+    if request.headers.get("X-Slack-Retry-Num"):
+        return jsonify({"ok": True}), 200
+
     data = request.get_json()
 
     if data.get("type") == "url_verification":
