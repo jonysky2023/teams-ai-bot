@@ -14,9 +14,10 @@ app = Flask(__name__)
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 
-conversation_history = {}   # { channel_id: [ {role, content}, ... ] }
-last_device = {}            # { channel_id: "DESKTOP-DEFE7N5" }
-waiting_for_device = {}     # { channel_id: True/False } — esperando que el usuario diga el nombre
+conversation_history = {}
+last_device = {}
+last_device_data = {}       # ✅ cache de todos los datos del dispositivo
+waiting_for_device = {}
 processed_events = set()
 
 
@@ -32,6 +33,15 @@ def send_slack_message(channel: str, text: str):
         )
     except Exception as e:
         print("Slack error:", e)
+
+
+def format_device_data(status: dict) -> str:
+    """Formatea todos los datos del dispositivo para pasarlos a Claude como contexto."""
+    lines = []
+    for key, value in status.items():
+        if value not in (None, "N/A", "", False, 0) or key in ("cpu", "memory", "disk_pct", "sessions", "idle_time"):
+            lines.append(f"{key}: {value}")
+    return "\n".join(lines)
 
 
 @app.route("/api", methods=["POST"])
@@ -58,7 +68,6 @@ def slack_handler():
     if not text:
         return jsonify({"error": "No text received"}), 400
 
-    # Deduplicar por event_id
     if event_id:
         if event_id in processed_events:
             return jsonify({"ok": True}), 200
@@ -66,111 +75,65 @@ def slack_handler():
         if len(processed_events) > 1000:
             processed_events.clear()
 
-    # ✅ Si estábamos esperando el nombre del dispositivo, guardarlo directamente
+    # Si esperamos el nombre del dispositivo, guardarlo
     if waiting_for_device.get(channel):
         device_name = text.strip()
+        status = fetch_device_status(device_name)
+        if not status:
+            send_slack_message(channel, f"❌ No encontré ningún dispositivo con el nombre *{device_name}*. ¿Puedes comprobarlo e intentarlo de nuevo?")
+            return jsonify({"ok": True}), 200
         last_device[channel] = device_name
+        last_device_data[channel] = status
         waiting_for_device[channel] = False
-        send_slack_message(channel, f"✅ Dispositivo *{device_name}* guardado. ¿Qué quieres saber sobre él?")
+        send_slack_message(channel, f"✅ Dispositivo *{device_name}* encontrado y guardado. ¿Qué quieres saber sobre él?")
         return jsonify({"ok": True}), 200
 
-    # ✅ Si no hay dispositivo guardado, preguntar antes de hacer nada
+    # Si no hay dispositivo guardado, preguntar
     if channel not in last_device:
         waiting_for_device[channel] = True
         send_slack_message(channel, "👋 Para ayudarte necesito saber el nombre de tu equipo. ¿Cómo se llama tu dispositivo? (por ejemplo: *DESKTOP-DEFE7N5*)")
         return jsonify({"ok": True}), 200
 
-    # A partir de aquí siempre hay dispositivo guardado
-    device_context = (
-        f"El usuario está trabajando con el dispositivo '{last_device[channel]}'. "
-        f"Usa SIEMPRE ese dispositivo para cualquier consulta sin volver a preguntarlo. "
-        f"Interpreta errores tipográficos: 'cepu' es CPU, 'ram' es memoria, 'hdd' o 'disco' es disco duro."
-    )
+    # Refrescar datos del dispositivo en cada consulta
+    status = fetch_device_status(last_device[channel])
+    if status:
+        last_device_data[channel] = status
+
+    device_info = format_device_data(last_device_data.get(channel, {}))
 
     system_prompt = (
-        "Eres un asistente IT que consulta el estado de dispositivos. "
-        "Usa siempre las tools disponibles. Nunca respondas con JSON en crudo. Nunca inventes datos. "
-        + device_context
+        "Eres un asistente IT que responde preguntas sobre dispositivos. "
+        "Responde SIEMPRE en el idioma del usuario. "
+        "Interpreta errores tipográficos: 'cepu' es CPU, 'hdd' o 'disco' es disco duro. "
+        "Nunca inventes datos. Si no tienes el dato, dilo claramente. "
+        "Sé conciso y usa emojis para hacer la respuesta más legible en Slack.\n\n"
+        f"Datos actuales del dispositivo '{last_device[channel]}':\n{device_info}"
     )
 
-    # Historial de conversación
     if channel not in conversation_history:
         conversation_history[channel] = []
     conversation_history[channel].append({"role": "user", "content": text})
     history = conversation_history[channel][-10:]
 
     try:
+        # ✅ Sin tools: Claude responde directamente con los datos del contexto
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=500,
-            tools=tools,
-            tool_choice={"type": "auto"},
             system=system_prompt,
             messages=history
         )
 
-        tool_call = None
+        slack_message = "No se pudo procesar la solicitud."
         for block in response.content:
-            if block.type == "tool_use":
-                tool_call = block
+            if hasattr(block, "text"):
+                slack_message = block.text
                 break
 
-        slack_message = "No se pudo procesar la solicitud."
-        assistant_response = ""
-
-        if tool_call:
-
-            if tool_call.name == "get_workspace_info":
-                device_name = tool_call.input.get("device_name", last_device[channel])
-                last_device[channel] = device_name
-                ws = find_workspace(device_name)
-                if not ws:
-                    slack_message = f"❌ No encontrado: *{device_name}*"
-                else:
-                    slack_message = (
-                        f"💻 *Dispositivo:* {ws.get('FullName', 'N/A')}\n"
-                        f"🆔 *FlexxibleMID:* {ws.get('FlexxibleMID', 'N/A')}\n"
-                        f"👤 *Usuario:* {ws.get('UserName', 'N/A')}\n"
-                        f"🌐 *IP:* {ws.get('IP', 'N/A')}\n"
-                        f"🖥️ *OS:* {ws.get('OperatingSystem', 'N/A')}\n"
-                        f"⚡ *Estado:* {ws.get('PowerState', 'N/A')} / Agente: {ws.get('FlexxAgentStatus', 'N/A')}"
-                    )
-
-            elif tool_call.name == "get_device_status":
-                device_name = tool_call.input.get("device_name", last_device[channel])
-                last_device[channel] = device_name
-                workspace_name = tool_call.input.get("workspace", "default")
-                status = fetch_device_status(device_name, workspace_name)
-                if not status:
-                    slack_message = f"❌ No se pudo obtener el estado de: *{device_name}*"
-                else:
-                    slack_message = (
-                        f"📡 *Estado de {device_name}*\n"
-                        f"⚡ *Power / Agente:* {status.get('online', 'N/A')}\n"
-                        f"🖥️ *CPU:* {status.get('cpu', 'N/A')}%\n"
-                        f"💾 *RAM:* {status.get('memory', 'N/A')}%\n"
-                        f"💿 *Disco:* {status.get('disk', 'N/A')}\n"
-                        f"🕐 *Última actividad:* {status.get('last_seen', 'N/A')}\n"
-                        f"🛡️ *Antivirus:* {status.get('antivirus', 'N/A')}\n"
-                        f"🔄 *Último reinicio:* hace {status.get('last_restart', 'N/A')} días\n"
-                        f"🌐 *IP:* {status.get('ip', 'N/A')}\n"
-                        f"🖥️ *OS:* {status.get('os', 'N/A')}"
-                    )
-
-            assistant_response = slack_message
-
-        else:
-            for block in response.content:
-                if hasattr(block, "text"):
-                    slack_message = block.text
-                    assistant_response = block.text
-                    break
-
-        if assistant_response:
-            conversation_history[channel].append({
-                "role": "assistant",
-                "content": assistant_response
-            })
+        conversation_history[channel].append({
+            "role": "assistant",
+            "content": slack_message
+        })
 
         if channel:
             send_slack_message(channel, slack_message)
