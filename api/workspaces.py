@@ -65,7 +65,7 @@ def find_workspace(device_name: str) -> dict | None:
             return None
 
         data = response.json()
-        items = data if isinstance(data, list) else data.get("value", [])
+        items = data if isinstance(data, list) else data.get("Items", data.get("value", []))
         print(f"DEBUG total items: {len(items)}")
         if items:
             print(f"DEBUG primer item keys: {list(items[0].keys())}")
