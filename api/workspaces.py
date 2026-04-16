@@ -1,4 +1,4 @@
-import os
+import os  # ✅ esto faltaba
 
 WORKSPACES = {
     "default": {
@@ -25,4 +25,27 @@ WORKSPACES = {
 
 
 def get_workspace(name: str):
+    """Devuelve la config del workspace por nombre."""
     return WORKSPACES.get(name, WORKSPACES["default"])
+
+
+def find_workspace(device_name: str):
+    """
+    Busca un dispositivo por nombre.
+    Sustituye el cuerpo por una llamada real a tu API, por ejemplo:
+
+        config = get_workspace("default")
+        response = requests.get(
+            f"{config['api_baseurl']}/devices?name={device_name}",
+            auth=(config["api_user"], config["api_pass"])
+        )
+        return response.json() if response.ok else None
+    """
+    if not device_name:
+        return None
+
+    workspace = WORKSPACES.get(device_name)
+    if workspace:
+        return {"Name": device_name, "FlexxibleMID": "N/A", **workspace}
+
+    return None
