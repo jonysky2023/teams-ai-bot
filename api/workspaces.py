@@ -1,3 +1,5 @@
+import os
+
 WORKSPACES = {
     "default": {
         "api_baseurl": os.getenv("API_BASEURL"),
