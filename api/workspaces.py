@@ -1,28 +1,26 @@
-import requests
-import os
+WORKSPACES = {
+    "default": {
+        "api_baseurl": os.getenv("API_BASEURL"),
+        "api_user": os.getenv("API_USER"),
+        "api_pass": os.getenv("API_PASS"),
+        "enabled_tools": [
+            "get_device_status",
+            "get_service_info",
+            "restart_service"
+        ]
+    },
 
-def get_workspaces():
+    "client_a": {
+        "api_baseurl": "https://client-a.api.com",
+        "api_user": "user_a",
+        "api_pass": "pass_a",
+        "enabled_tools": [
+            "get_device_status",
+            "get_user_info"
+        ]
+    }
+}
 
-    url = f"{os.environ['FLEXX_BASE_URL']}/workspaces?apiversion=1"
 
-    auth = (os.environ["FLEXX_USER"], os.environ["FLEXX_PASS"])
-
-    response = requests.get(url, auth=auth)
-
-    return response.json()
-
-
-def find_workspace(device_name):
-
-    workspaces = get_workspaces()
-
-    device_name = device_name.lower()
-
-    for ws in workspaces:
-
-        name = ws.get("Name", "").lower()
-
-        if name == device_name:
-            return ws
-
-    return None
+def get_workspace(name: str):
+    return WORKSPACES.get(name, WORKSPACES["default"])
