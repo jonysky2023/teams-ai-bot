@@ -165,3 +165,46 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         "session_analyzer_ver": device.get("SessionAnalyzerVersion", "N/A"),
         "unattended_remote":    device.get("UnattendedRemoteAssistance", "N/A"),
     }
+
+
+def run_microservice(microservice_id: str, flx_unique_id: str, display_name: str = "Task from FlexxiBot") -> dict | None:
+    """
+    Ejecuta un microservicio en un dispositivo via Flexxible API.
+    Devuelve la respuesta de la API o None si falla.
+    """
+    config = get_workspace("default")
+    base_url = config.get("api_baseurl")
+    user = config.get("api_user")
+    password = config.get("api_pass")
+
+    if not base_url:
+        print("ERROR: API_BASEURL no configurada")
+        return None
+
+    try:
+        response = requests.post(
+            f"{base_url}/runMicroserviceAsTask",
+            params={"apiversion": "1"},
+            auth=(user, password),
+            json={
+                "displayname": display_name,
+                "MicroserviceId": microservice_id,
+                "FLXUniqueIDList": flx_unique_id,
+                "SNOWEnvironmentList": "",
+                "WorkspaceGroupIDList": ""
+            },
+            timeout=15
+        )
+
+        print(f"DEBUG runMicroservice status: {response.status_code}")
+        print(f"DEBUG runMicroservice response: {response.text[:300]}")
+
+        if response.ok:
+            return response.json() if response.text else {"ok": True}
+        else:
+            print(f"Flexxible runMicroservice error: {response.status_code} {response.text}")
+            return None
+
+    except Exception as e:
+        print(f"Error ejecutando microservicio: {e}")
+        return None
