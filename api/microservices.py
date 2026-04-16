@@ -33,10 +33,10 @@ MICROSERVICES = [
         "keywords": ["edge", "caché", "cache", "navegador", "microsoft edge", "borrar caché"]
     },
     {
-        "id": "69ddf1092b3289bb993df15f",
-        "name": "Instalar Adobe Acrobat Reader",
-        "description": "Descarga e instala Adobe Acrobat Reader desde Microsoft Store en el dispositivo.",
-        "keywords": ["adobe", "acrobat", "pdf", "reader", "instalar adobe"]
+        "id": "69e1040e9ac2c51da41611db",
+        "name": "Instalar 7-zip",
+        "description": "Descarga e instala 7-zip en el dispositivo.",
+        "keywords": ["7-zip", "7zip", "rar", "zip", "instalar 7-zip"]
     }
 ]
 
