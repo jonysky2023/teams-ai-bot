@@ -37,17 +37,28 @@ def find_workspace(device_name: str) -> dict | None:
     user = config.get("api_user")
     password = config.get("api_pass")
 
+    print(f"DEBUG base_url: {base_url}")
+    print(f"DEBUG user: {user}")
+    print(f"DEBUG buscando: {device_name}")
+
     if not base_url:
         print("ERROR: API_BASEURL no configurada")
         return None
 
     try:
+        url = f"{base_url}/workspaces"
+        params = {"apiversion": "1"}
+        print(f"DEBUG request: GET {url} params={params} auth=({user}, ***)")
+
         response = requests.get(
-            f"{base_url}/workspaces",
-            params={"apiversion": "1"},
+            url,
+            params=params,
             auth=(user, password),
             timeout=10
         )
+
+        print(f"DEBUG status: {response.status_code}")
+        print(f"DEBUG response (primeros 500 chars): {response.text[:500]}")
 
         if not response.ok:
             print(f"Flexxible API error: {response.status_code} {response.text}")
@@ -55,21 +66,26 @@ def find_workspace(device_name: str) -> dict | None:
 
         data = response.json()
         items = data if isinstance(data, list) else data.get("value", [])
+        print(f"DEBUG total items: {len(items)}")
+        if items:
+            print(f"DEBUG primer item keys: {list(items[0].keys())}")
+            print(f"DEBUG primer FullName: {items[0].get('FullName')}")
 
         device_name_lower = device_name.lower()
 
-        # Buscar en FullName y UserName (campos reales de Flexxible)
+        # Match exacto por FullName
         for item in items:
             full_name = item.get("FullName", "")
             if full_name.lower() == device_name_lower:
                 return item
 
-        # Match parcial si no hay exacto
+        # Match parcial por FullName
         for item in items:
             full_name = item.get("FullName", "")
             if device_name_lower in full_name.lower():
                 return item
 
+        print(f"DEBUG: ningún dispositivo coincide con '{device_name}'")
         return None
 
     except Exception as e:
@@ -82,7 +98,6 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
     if not device:
         return None
 
-    # Mapeo con los campos reales de la API de Flexxible
     power = device.get("PowerState", "Unknown")
     agent = device.get("FlexxAgentStatus", "Unknown")
     online = f"{power} / Agente: {agent}"
