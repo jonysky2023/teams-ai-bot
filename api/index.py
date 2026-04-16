@@ -3,7 +3,6 @@ from anthropic import Anthropic
 import os
 import requests
 import sys
-import threading
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -15,9 +14,11 @@ app = Flask(__name__)
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 
+# IDs de eventos ya procesados para evitar duplicados
+processed_events = set()
+
 
 def send_slack_message(channel: str, text: str):
-    """Envía mensaje a Slack."""
     try:
         requests.post(
             "https://slack.com/api/chat.postMessage",
@@ -31,11 +32,39 @@ def send_slack_message(channel: str, text: str):
         print("Slack error:", e)
 
 
-def process_and_respond(text: str, channel: str):
-    """
-    Procesa el mensaje con Claude + Flexxible y responde a Slack.
-    Se ejecuta en un hilo separado para no bloquear la respuesta HTTP.
-    """
+@app.route("/api", methods=["POST"])
+def slack_handler():
+    data = request.get_json()
+
+    if data.get("type") == "url_verification":
+        return jsonify({"challenge": data["challenge"]})
+
+    text = ""
+    channel = None
+    event_id = None
+
+    if "event" in data:
+        event = data["event"]
+        if event.get("bot_id"):
+            return jsonify({"ok": True})
+        text = event.get("text", "")
+        channel = event.get("channel")
+        event_id = data.get("event_id")  # ✅ ID único por evento de Slack
+    else:
+        text = data.get("text", "")
+
+    if not text:
+        return jsonify({"error": "No text received"}), 400
+
+    # ✅ Deduplicar por event_id en lugar de por retry header
+    if event_id:
+        if event_id in processed_events:
+            return jsonify({"ok": True}), 200
+        processed_events.add(event_id)
+        # Limitar tamaño del set para no crecer indefinidamente
+        if len(processed_events) > 1000:
+            processed_events.clear()
+
     try:
         response = client.messages.create(
             model="claude-sonnet-4-5",
@@ -101,43 +130,13 @@ def process_and_respond(text: str, channel: str):
                     slack_message = block.text
                     break
 
-        send_slack_message(channel, slack_message)
+        if channel:
+            send_slack_message(channel, slack_message)
 
     except Exception as e:
-        print(f"Error en process_and_respond: {e}")
-        send_slack_message(channel, "❌ Error interno procesando la solicitud.")
-
-
-@app.route("/api", methods=["POST"])
-def slack_handler():
-    # ✅ Ignorar reintentos de Slack
-    if request.headers.get("X-Slack-Retry-Num"):
-        return jsonify({"ok": True}), 200
-
-    data = request.get_json()
-
-    if data.get("type") == "url_verification":
-        return jsonify({"challenge": data["challenge"]})
-
-    text = ""
-    channel = None
-
-    if "event" in data:
-        event = data["event"]
-        if event.get("bot_id"):
-            return jsonify({"ok": True})
-        text = event.get("text", "")
-        channel = event.get("channel")
-    else:
-        text = data.get("text", "")
-
-    if not text:
-        return jsonify({"error": "No text received"}), 400
-
-    # ✅ Responder a Slack inmediatamente y procesar en background
-    if channel:
-        thread = threading.Thread(target=process_and_respond, args=(text, channel))
-        thread.start()
+        print(f"Error: {e}")
+        if channel:
+            send_slack_message(channel, "❌ Error interno procesando la solicitud.")
 
     return jsonify({"ok": True}), 200
 
