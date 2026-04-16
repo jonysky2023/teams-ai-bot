@@ -7,7 +7,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from tools import tools
-from workspaces import find_workspace, fetch_device_status, find_device_by_slack_user
+from workspaces import find_workspace, get_workspace, fetch_device_status
 
 app = Flask(__name__)
 
