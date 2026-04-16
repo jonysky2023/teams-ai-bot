@@ -4,7 +4,6 @@ import os
 import requests
 import sys
 
-# 🔥 FIX VERCEL IMPORTS
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from tools import tools
@@ -12,14 +11,10 @@ from workspaces import find_workspace, get_workspace
 
 app = Flask(__name__)
 
-# 🔑 API KEYS
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 
 
-# =========================
-# HELPER: obtener estado del dispositivo
-# =========================
 def fetch_device_status(device_name: str, workspace_name: str = "default") -> dict | None:
     config = get_workspace(workspace_name)
     base_url = config.get("api_baseurl")
@@ -43,9 +38,6 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         return None
 
 
-# =========================
-# MAIN ENDPOINT
-# =========================
 @app.route("/api", methods=["POST"])
 def slack_handler():
     data = request.get_json()
@@ -68,22 +60,21 @@ def slack_handler():
     if not text:
         return jsonify({"error": "No text received"}), 400
 
+    # ✅ PROMPT CORREGIDO: sin mencionar JSON, forzar uso de tools
     response = client.messages.create(
         model="claude-sonnet-4-5",
         max_tokens=500,
         tools=tools,
+        tool_choice={"type": "auto"},  # ✅ deja a Claude elegir la tool correcta
+        system=(
+            "Eres un asistente IT. Cuando el usuario pida información sobre un dispositivo "
+            "SIEMPRE usa las tools disponibles. Nunca respondas con JSON en crudo. "
+            "Nunca inventes datos. Si no puedes usar una tool, di que no tienes esa información."
+        ),
         messages=[
             {
                 "role": "user",
-                "content": f"""
-El usuario puede pedir información o el estado de dispositivos.
-
-- Si pide datos o información de un equipo → usa get_workspace_info
-- Si pide el estado, salud, si está online/offline → usa get_device_status
-
-Mensaje:
-{text}
-"""
+                "content": text  # ✅ texto limpio, sin instrucciones extra que confundan
             }
         ]
     )
