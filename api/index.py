@@ -91,9 +91,11 @@ def slack_handler():
 
     system_prompt = (
         "Eres un asistente IT que responde preguntas y ejecuta acciones en dispositivos. "
-        "Responde SIEMPRE en el idioma del usuario "
+        "Responde SIEMPRE en el idioma del usuario. "
         "Interpreta errores tipográficos: 'cepu' es CPU, 'hdd' o 'disco' es disco duro. "
-        "Nunca inventes datos. Sé conciso y usa emojis para hacer la respuesta más legible en Slack.\n\n"
+        "Nunca inventes datos. Sé conciso y usa emojis para hacer la respuesta más legible en Slack. "
+        "Nunca menciones el nombre técnico exacto del dispositivo (ej. códigos tipo DESKTOP-XXXXX); "
+        "refiérete a él siempre como 'tu equipo' o 'tu dispositivo'.\n\n"
         f"Dispositivo activo: '{DEFAULT_DEVICE}'\n\n"
         f"Datos actuales del dispositivo:\n{device_info_str}\n\n"
         f"{microservices_catalog}\n\n"
@@ -140,7 +142,7 @@ def slack_handler():
                 )
                 if result:
                     slack_message = (
-                        f"✅ *{microservice_name}* lanzado correctamente en *{DEFAULT_DEVICE}*.\n"
+                        f"✅ *{microservice_name}* lanzado correctamente en tu equipo.\n"
                         f"⏳ El script se está ejecutando en el dispositivo. Puede tardar unos minutos."
                     )
                 else:
