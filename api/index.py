@@ -69,12 +69,17 @@ def slack_handler():
         return jsonify({"error": "No text received"}), 400
 
     # Comando especial: limpiar pantalla visualmente
-    if text.lower().strip() in ("limpiar pantalla", "limpiar chat", "clear"):
-        blank_lines = "\n" * 60 + "🆕 Conversación reiniciada visualmente. ¿En qué puedo ayudarte?"
+    if text.lower().strip() in (
+        "limpiar pantalla", "limpiar chat", "clear",
+        "/limpiar pantalla", "/limpiar chat", "/clear", "/reset"
+    ):
         conversation_history[channel] = []
         if channel:
-            send_slack_message(channel, blank_lines)
+            for _ in range(25):
+                send_slack_message(channel, "⠀")  # carácter invisible, Slack no lo recorta
+            send_slack_message(channel, "🆕 Conversación reiniciada. ¿En qué puedo ayudarte?")
         return jsonify({"ok": True}), 200
+
 
     if event_id:
         if event_id in processed_events:
