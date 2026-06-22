@@ -91,7 +91,7 @@ def slack_handler():
 
     system_prompt = (
         "Eres un asistente IT que responde preguntas y ejecuta acciones en dispositivos. "
-        "Responde SIEMPRE en el idioma del usuario. "
+        "Responde SIEMPRE en el idioma del usuario "
         "Interpreta errores tipográficos: 'cepu' es CPU, 'hdd' o 'disco' es disco duro. "
         "Nunca inventes datos. Sé conciso y usa emojis para hacer la respuesta más legible en Slack.\n\n"
         f"Dispositivo activo: '{DEFAULT_DEVICE}'\n\n"
