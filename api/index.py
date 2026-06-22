@@ -14,12 +14,11 @@ app = Flask(__name__)
 
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
+DEFAULT_DEVICE = os.environ["DEFAULT_DEVICE"]  # ej: DESKTOP-DEFE7N5
 
 conversation_history = {}
-last_device = {}
 last_device_data = {}
 last_flx_unique_id = {}     # ✅ FLXUniqueID necesario para ejecutar microservicios
-waiting_for_device = {}
 processed_events = set()
 
 
@@ -76,31 +75,14 @@ def slack_handler():
         if len(processed_events) > 1000:
             processed_events.clear()
 
-    # Si esperamos el nombre del dispositivo, guardarlo
-    if waiting_for_device.get(channel):
-        device_name = text.strip()
-        status = fetch_device_status(device_name)
-        if not status:
-            send_slack_message(channel, f"❌ No encontré ningún dispositivo con el nombre *{device_name}*. ¿Puedes comprobarlo e intentarlo de nuevo?")
-            return jsonify({"ok": True}), 200
-        # Guardar FLXUniqueID para ejecutar microservicios
-        device_info = find_workspace(device_name)
+    # Obtener FLXUniqueID si no lo tenemos cacheado para este canal
+    if channel not in last_flx_unique_id:
+        device_info = find_workspace(DEFAULT_DEVICE)
         if device_info:
             last_flx_unique_id[channel] = device_info.get("FLXUniqueID") or device_info.get("FlexxibleMID", "")
-        last_device[channel] = device_name
-        last_device_data[channel] = status
-        waiting_for_device[channel] = False
-        send_slack_message(channel, f"✅ Dispositivo *{device_name}* encontrado y guardado. ¿Qué quieres saber o hacer con él?")
-        return jsonify({"ok": True}), 200
 
-    # Si no hay dispositivo guardado, preguntar
-    if channel not in last_device:
-        waiting_for_device[channel] = True
-        send_slack_message(channel, "👋 Para ayudarte necesito saber el nombre de tu equipo. ¿Cómo se llama tu dispositivo? (por ejemplo: *DESKTOP-DEFE7N5*)")
-        return jsonify({"ok": True}), 200
-
-    # Refrescar datos del dispositivo
-    status = fetch_device_status(last_device[channel])
+    # Refrescar datos del dispositivo predefinido
+    status = fetch_device_status(DEFAULT_DEVICE)
     if status:
         last_device_data[channel] = status
 
@@ -112,7 +94,7 @@ def slack_handler():
         "Responde SIEMPRE en el idioma del usuario. "
         "Interpreta errores tipográficos: 'cepu' es CPU, 'hdd' o 'disco' es disco duro. "
         "Nunca inventes datos. Sé conciso y usa emojis para hacer la respuesta más legible en Slack.\n\n"
-        f"Dispositivo activo: '{last_device[channel]}'\n\n"
+        f"Dispositivo activo: '{DEFAULT_DEVICE}'\n\n"
         f"Datos actuales del dispositivo:\n{device_info_str}\n\n"
         f"{microservices_catalog}\n\n"
         "Cuando el usuario pida ejecutar una acción en su equipo, usa la tool run_microservice "
@@ -149,7 +131,7 @@ def slack_handler():
             flx_unique_id = last_flx_unique_id.get(channel, "")
 
             if not flx_unique_id:
-                slack_message = "❌ No tengo el identificador único del dispositivo para ejecutar la acción. Intenta registrar el dispositivo de nuevo."
+                slack_message = "❌ No tengo el identificador único del dispositivo para ejecutar la acción. Comprueba que el agente Flexxible está activo."
             else:
                 result = run_microservice(
                     microservice_id=microservice_id,
@@ -158,7 +140,7 @@ def slack_handler():
                 )
                 if result:
                     slack_message = (
-                        f"✅ *{microservice_name}* lanzado correctamente en *{last_device[channel]}*.\n"
+                        f"✅ *{microservice_name}* lanzado correctamente en *{DEFAULT_DEVICE}*.\n"
                         f"⏳ El script se está ejecutando en el dispositivo. Puede tardar unos minutos."
                     )
                 else:
