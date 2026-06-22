@@ -46,6 +46,10 @@ def format_device_data(status: dict) -> str:
 
 @app.route("/api", methods=["POST"])
 def slack_handler():
+    # Ignorar reintentos automáticos de Slack (si tardamos >3s en responder)
+    if request.headers.get("X-Slack-Retry-Num"):
+        return jsonify({"ok": True}), 200
+
     data = request.get_json()
 
     if data.get("type") == "url_verification":
@@ -75,7 +79,7 @@ def slack_handler():
     ):
         conversation_history[channel] = []
         if channel:
-            for _ in range(25):
+            for _ in range(8):
                 send_slack_message(channel, "⠀")  # carácter invisible, Slack no lo recorta
             send_slack_message(channel, "🆕 Conversación reiniciada. ¿En qué puedo ayudarte?")
         return jsonify({"ok": True}), 200
