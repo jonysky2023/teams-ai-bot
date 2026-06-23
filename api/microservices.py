@@ -22,6 +22,12 @@ MICROSERVICES = [
         "name": "Limpieza de temporales",
         "description": "Elimina archivos temporales del sistema para liberar espacio en disco y mejorar el rendimiento.",
         "keywords": ["temporales", "limpiar disco", "liberar espacio", "temp", "limpieza"]
+    },
+    {
+        "id": "69e1040e9ac2c51da41611db",
+        "name": "Instalar 7-Zip",
+        "description": "Descarga e instala 7-Zip en silencio en el dispositivo.",
+        "keywords": ["7-zip", "7zip", "rar", "zip", "comprimir", "descomprimir", "instalar 7-zip"]
     }
 ]
 
