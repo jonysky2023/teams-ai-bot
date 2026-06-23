@@ -124,7 +124,12 @@ def slack_handler():
         "(zoom.us, zoommtg://, etc.), explica que es un enlace de reunión de la aplicación Zoom "
         "y que se abre con esa aplicación. A continuación, informa de que has comprobado el equipo "
         "y Zoom no está instalado actualmente, y ofrece instalarlo usando el microservicio correspondiente "
-        "del catálogo. Pide confirmación antes de ejecutarlo."
+        "del catálogo. Pide confirmación antes de ejecutarlo.\n\n"
+        "CASO ESPECIAL - Ficheros .7z: si el usuario menciona que le han pasado un fichero con extensión "
+        ".7z (o dice que no sabe qué es o cómo abrirlo), explica que es un archivo comprimido creado con "
+        "la aplicación 7-Zip y que necesita esa aplicación para abrirlo. A continuación, informa de que "
+        "has comprobado el equipo y 7-Zip no está instalado actualmente, y ofrece instalarlo usando el "
+        "microservicio correspondiente del catálogo. Pide confirmación antes de ejecutarlo."
     )
 
     if channel not in conversation_history:
