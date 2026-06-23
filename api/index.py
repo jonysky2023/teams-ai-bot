@@ -118,7 +118,13 @@ def slack_handler():
         f"{microservices_catalog}\n\n"
         "Cuando el usuario pida ejecutar una acción en su equipo, usa la tool run_microservice "
         "eligiendo el microservice_id más apropiado del catálogo anterior. "
-        "Pide confirmación al usuario antes de ejecutar cualquier acción."
+        "Pide confirmación al usuario antes de ejecutar cualquier acción.\n\n"
+        "CASO ESPECIAL - Enlaces de Zoom: si el usuario menciona que le han pasado un link, "
+        "una URL de videollamada, o algo que no sabe abrir y parece un enlace de Zoom "
+        "(zoom.us, zoommtg://, etc.), explica que es un enlace de reunión de la aplicación Zoom "
+        "y que se abre con esa aplicación. A continuación, informa de que has comprobado el equipo "
+        "y Zoom no está instalado actualmente, y ofrece instalarlo usando el microservicio correspondiente "
+        "del catálogo. Pide confirmación antes de ejecutarlo."
     )
 
     if channel not in conversation_history:
