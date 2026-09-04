@@ -7,7 +7,7 @@ import requests
 #   FLEXXIBLE_ORG_ID    → organization_id de tu organización
 #   DEFAULT_DEVICE      → nombre del dispositivo (ya existía)
 
-API_BASE = "https://api.flexxible.com/v1"  # Gen 2, versión v1
+API_BASE = "https://api.flexxible.net/v1"  # Gen 2, versión v1
 
 def _headers() -> dict:
     return {
