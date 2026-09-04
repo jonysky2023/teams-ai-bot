@@ -44,6 +44,7 @@ def format_device_data(status: dict) -> str:
     return "\n".join(lines)
 
 
+@app.route("/api", methods=["POST"])
 @app.route("/api/index", methods=["POST"]) 
 def slack_handler():
     # Ignorar reintentos automáticos de Slack (si tardamos >3s en responder)
