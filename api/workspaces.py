@@ -1,69 +1,79 @@
 import os
 import requests
 
-WORKSPACES = {
-    "default": {
-        "api_baseurl": os.getenv("API_BASEURL"),
-        "api_user": os.getenv("API_USER"),
-        "api_pass": os.getenv("API_PASS"),
-        "enabled_tools": [
-            "get_device_status",
-            "get_service_info",
-            "restart_service"
-        ]
-    },
-    "client_a": {
-        "api_baseurl": "https://client-a.api.com",
-        "api_user": "user_a",
-        "api_pass": "pass_a",
-        "enabled_tools": [
-            "get_device_status",
-            "get_user_info"
-        ]
-    }
-}
+# ─── Configuración Gen 2 ───────────────────────────────────────────────────────
+# Variables de entorno necesarias en Vercel:
+#   FLEXXIBLE_API_KEY   → API key de Flexxible Gen 2
+#   FLEXXIBLE_ORG_ID    → organization_id de tu organización
+#   DEFAULT_DEVICE      → nombre del dispositivo (ya existía)
 
+API_BASE = "https://api.flexxible.com/v1"  # Gen 2, versión v1
+
+def _headers() -> dict:
+    return {
+        "x-api-key": os.environ["FLEXXIBLE_API_KEY"],
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+def _org_id() -> str:
+    return os.environ["FLEXXIBLE_ORG_ID"]
+
+
+# ─── Workspaces ───────────────────────────────────────────────────────────────
 
 def get_workspace(name: str) -> dict:
-    return WORKSPACES.get(name, WORKSPACES["default"])
+    """Compatibilidad con el código anterior — devuelve config básica."""
+    return {"name": name}
 
 
 def find_workspace(device_name: str) -> dict | None:
+    """Busca un workspace por nombre/FullName usando la API Gen 2."""
     if not device_name:
         return None
 
-    config = get_workspace("default")
-    base_url = config.get("api_baseurl")
-    user = config.get("api_user")
-    password = config.get("api_pass")
-
-    if not base_url:
-        print("ERROR: API_BASEURL no configurada")
-        return None
-
     try:
+        # Filtro JSON según estructura AST de FilterNode de Flexxible Gen 2
+        import json
+        filter_str = json.dumps({
+            "field": "name",
+            "operator": "contains",
+            "value": device_name
+        })
+
         response = requests.get(
-            f"{base_url}/workspaces",
-            params={"apiversion": "1"},
-            auth=(user, password),
+            f"{API_BASE}/workspaces",
+            headers=_headers(),
+            params={
+                "organizationId": _org_id(),
+                "filter": filter_str,
+                "pageSize": 10
+            },
             timeout=10
         )
 
         if not response.ok:
-            print(f"Flexxible API error: {response.status_code} {response.text}")
+            print(f"Flexxible API error: {response.status_code} {response.text[:200]}")
             return None
 
         data = response.json()
-        items = data if isinstance(data, list) else data.get("Items", data.get("value", []))
+        items = data.get("items", data.get("data", []))
+
+        if not items:
+            return None
 
         device_name_lower = device_name.lower()
 
+        # Coincidencia exacta primero
         for item in items:
-            if item.get("FullName", "").lower() == device_name_lower:
+            name_field = item.get("name", item.get("fullName", item.get("FullName", "")))
+            if name_field.lower() == device_name_lower:
                 return item
 
+        # Coincidencia parcial
         for item in items:
-            if device_name_lower in item.get("FullName", "").lower():
+            name_field = item.get("name", item.get("fullName", item.get("FullName", "")))
+            if device_name_lower in name_field.lower():
                 return item
 
         return None
@@ -74,125 +84,84 @@ def find_workspace(device_name: str) -> dict | None:
 
 
 def fetch_device_status(device_name: str, workspace_name: str = "default") -> dict | None:
+    """Obtiene el estado del workspace/dispositivo desde Gen 2."""
     device = find_workspace(device_name)
     if not device:
         return None
 
+    # Gen 2 usa snake_case en los campos — mapeamos los conocidos
+    # y hacemos fallback a los campos legacy por compatibilidad
+    def g(key_new, key_old=None, default="N/A"):
+        return device.get(key_new, device.get(key_old, default) if key_old else default)
+
     return {
-        # Identidad
-        "full_name":            device.get("FullName", "N/A"),
-        "user":                 device.get("UserName", "N/A"),
-        "flexxible_mid":        device.get("FlexxibleMID", "N/A"),
+        "full_name":            g("name", "FullName"),
+        "user":                 g("userName", "UserName"),
+        "flexxible_mid":        g("id", "FlexxibleMID"),
 
-        # Estado y conectividad
-        "power_state":          device.get("PowerState", "N/A"),
-        "agent_status":         device.get("FlexxAgentStatus", "N/A"),
-        "agent_version":        device.get("FlexxAgentVersion", "N/A"),
-        "last_report":          device.get("FlexxAgentLastReport", "N/A"),
-        "last_seen":            device.get("LastTime", "N/A"),
-        "last_restart_days":    device.get("LastRestartInDays", "N/A"),
-        "reboot_pending":       device.get("RebootPending", "N/A"),
-        "sessions":             device.get("SessionsCount", "N/A"),
-        "idle_time":            device.get("IdleTime", "N/A"),
+        "power_state":          g("powerState", "PowerState"),
+        "agent_status":         g("agentStatus", "FlexxAgentStatus"),
+        "agent_version":        g("agentVersion", "FlexxAgentVersion"),
+        "last_report":          g("lastReport", "FlexxAgentLastReport"),
+        "last_seen":            g("lastSeen", "LastTime"),
+        "last_restart_days":    g("lastRestartInDays", "LastRestartInDays"),
+        "reboot_pending":       g("rebootPending", "RebootPending"),
+        "sessions":             g("sessionsCount", "SessionsCount"),
+        "idle_time":            g("idleTime", "IdleTime"),
 
-        # Red
-        "ip":                   device.get("IP", "N/A"),
-        "public_ip":            device.get("PublicIP", "N/A"),
-        "mac":                  device.get("MACAddress", "N/A"),
-        "subnet":               device.get("Subnet", "N/A"),
-        "gateway":              device.get("DefaultGateway", "N/A"),
-        "network_name":         device.get("NetworkName", "N/A"),
-        "wifi_signal":          device.get("ConnectionSignal", "N/A"),
-        "wifi_reliable":        device.get("WifiNetworkReliable", "N/A"),
-        "network_type":         device.get("NetworkInterfaceType", "N/A"),
+        "ip":                   g("ip", "IP"),
+        "public_ip":            g("publicIp", "PublicIP"),
+        "mac":                  g("macAddress", "MACAddress"),
+        "network_type":         g("networkInterfaceType", "NetworkInterfaceType"),
+        "wifi_signal":          g("connectionSignal", "ConnectionSignal"),
 
-        # Hardware
-        "cpu":                  device.get("CPU", "N/A"),
-        "memory":               device.get("PercentRAM", "N/A"),
-        "max_ram_gb":           device.get("MaxRAM", "N/A"),
-        "cores":                device.get("cores", "N/A"),
-        "disk_pct":             device.get("BootHardDiskUsedPercentage", "N/A"),
-        "disk_detail":          device.get("HardDiskCSize", "N/A"),
-        "is_physical":          device.get("IsPhysical", "N/A"),
-        "hypervisor":           device.get("Hypervisor", "N/A"),
-        "last_boot_duration":   device.get("LastBootDuration", "N/A"),
+        "cpu":                  g("cpu", "CPU"),
+        "memory":               g("percentRam", "PercentRAM"),
+        "max_ram_gb":           g("maxRam", "MaxRAM"),
+        "disk_pct":             g("bootHardDiskUsedPercentage", "BootHardDiskUsedPercentage"),
+        "disk_detail":          g("hardDiskCSize", "HardDiskCSize"),
 
-        # Sistema operativo
-        "os":                   device.get("OperatingSystem", "N/A"),
-        "os_build":             device.get("OSBuildNumber", "N/A"),
-        "windows_type":         device.get("WindowsType", "N/A"),
-        "last_windows_update":  device.get("LastWindowsUpdate", "N/A"),
-        "days_since_update":    device.get("LastWindowsUpdateInDays", "N/A"),
-        "fast_startup":         device.get("FastStartup", "N/A"),
+        "os":                   g("operatingSystem", "OperatingSystem"),
+        "os_build":             g("osBuildNumber", "OSBuildNumber"),
+        "last_windows_update":  g("lastWindowsUpdate", "LastWindowsUpdate"),
+        "days_since_update":    g("lastWindowsUpdateInDays", "LastWindowsUpdateInDays"),
 
-        # Seguridad
-        "antivirus":            device.get("Antivirus", "N/A"),
-        "antivirus_status":     device.get("AntivirusStatus", "N/A"),
-        "antivirus_version":    device.get("AntivirusVersion", "N/A"),
-        "crowdstrike":          device.get("CrowdStrikeStatus", "N/A"),
-        "crowdstrike_version":  device.get("CrowdStrikeVersion", "N/A"),
-        "crowdstrike_alerts":   device.get("CrowdStrikeActiveDetections", "N/A"),
-        "edr":                  device.get("EDR", "N/A"),
-        "compliance":           device.get("ComplianceResult", "N/A"),
-        "maintenance_mode":     device.get("IsInMaintenanceMode", "N/A"),
+        "antivirus":            g("antivirus", "Antivirus"),
+        "antivirus_status":     g("antivirusStatus", "AntivirusStatus"),
+        "crowdstrike":          g("crowdStrikeStatus", "CrowdStrikeStatus"),
+        "compliance":           g("complianceResult", "ComplianceResult"),
 
-        # BIOS
-        "bios_version":         device.get("BIOSVersion", "N/A"),
-        "bios_manufacturer":    device.get("BIOSManufacturer", "N/A"),
-        "bios_serial":          device.get("BIOSSerialNumber", "N/A"),
-        "bios_smb":             device.get("BIOSSMBVersion", "N/A"),
-
-        # Ubicación y organización
-        "city":                 device.get("City", "N/A"),
-        "country":              device.get("Country", "N/A"),
-        "area":                 device.get("Area", "N/A"),
-        "office":               device.get("Office", "N/A"),
-        "department":           device.get("Department", "N/A"),
-        "reporting_group":      device.get("ReportingGroup", "N/A"),
-        "tenant":               device.get("RGTenant", "N/A"),
-        "ou":                   device.get("OU", "N/A"),
-        "broker":               device.get("Broker", "N/A"),
-
-        # Ciclo de vida
-        "creation_date":        device.get("CreationDate", "N/A"),
-        "deletion_date":        device.get("DeletionDate", "N/A"),
-        "days_for_deletion":    device.get("DaysForDeletion", "N/A"),
-
-        # IoT / Agente
-        "iot_config":           device.get("IoTHubConfig", "N/A"),
-        "iot_status":           device.get("IoTHubDeviceStatus", "N/A"),
-        "session_analyzer":     device.get("SessionAnalyzer", "N/A"),
-        "session_analyzer_ver": device.get("SessionAnalyzerVersion", "N/A"),
-        "unattended_remote":    device.get("UnattendedRemoteAssistance", "N/A"),
+        "city":                 g("city", "City"),
+        "country":              g("country", "Country"),
+        "department":           g("department", "Department"),
+        "reporting_group":      g("reportingGroup", "ReportingGroup"),
+        "tenant":               g("tenant", "RGTenant"),
     }
 
 
+# ─── Microservicios ───────────────────────────────────────────────────────────
+
 def run_microservice(microservice_id: str, flx_unique_id: str, display_name: str = "Task from FlexxiBot") -> dict | None:
     """
-    Ejecuta un microservicio en un dispositivo via Flexxible API.
-    Devuelve la respuesta de la API o None si falla.
+    Ejecuta un microservicio en un dispositivo via Flexxible API Gen 2.
+    Gen 2 usa el endpoint de Operaciones para ejecutar microservicios.
     """
-    config = get_workspace("default")
-    base_url = config.get("api_baseurl")
-    user = config.get("api_user")
-    password = config.get("api_pass")
-
-    if not base_url:
-        print("ERROR: API_BASEURL no configurada")
-        return None
-
     try:
+        payload = {
+            "organizationId": _org_id(),
+            "name": display_name,
+            "type": "MICROSERVICE",
+            "microserviceId": microservice_id,
+            "scope": {
+                "type": "WORKSPACE",
+                "workspaceIds": [flx_unique_id]
+            }
+        }
+
         response = requests.post(
-            f"{base_url}/runMicroserviceAsTask",
-            params={"apiversion": "1"},
-            auth=(user, password),
-            json={
-                "displayname": display_name,
-                "MicroserviceId": microservice_id,
-                "FLXUniqueIDList": flx_unique_id,
-                "SNOWEnvironmentList": "",
-                "WorkspaceGroupIDList": ""
-            },
+            f"{API_BASE}/operations",
+            headers=_headers(),
+            json=payload,
             timeout=15
         )
 
