@@ -169,9 +169,16 @@ def slack_handler():
         "2. Identifica métricas relevantes para el problema reportado (CPU, RAM, disco, "
         "actualizaciones pendientes, reinicio pendiente, etc.)\n"
         "3. Da un diagnóstico concreto basado en esos datos reales, citando los valores exactos\n"
-        "4. Propón la acción más adecuada del catálogo de microservicios disponibles\n"
-        "5. Pide confirmación antes de ejecutar cualquier acción\n\n"
-        "Umbrales de referencia para el diagnóstico:\n"
+        "4. Propón TODAS las acciones del catálogo que puedan ayudar con el problema, "
+        "ordenadas por relevancia. No te limites a una sola — si hay varias útiles, "
+        "muéstralas todas numeradas explicando brevemente para qué sirve cada una. "
+        "Formato:\n"
+        "   1️⃣ *Nombre acción*: para qué sirve\n"
+        "   2️⃣ *Nombre acción*: para qué sirve\n"
+        "   3️⃣ *Nombre acción*: para qué sirve\n"
+        "5. Pregunta al usuario cuál quiere ejecutar primero (o si quiere ejecutarlas todas)\n"
+        "6. Ejecuta solo cuando el usuario confirme explícitamente\n\n"
+        "Umbrales de referencia:\n"
         "- CPU > 80% → uso elevado\n"
         "- RAM > 85% → memoria muy cargada\n"
         "- Disco > 80% → poco espacio libre\n"
@@ -202,7 +209,7 @@ def slack_handler():
         print(f"DEBUG: Llamando a Claude, mensaje: {text[:80]}")
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=600,
+            max_tokens=800,
             tools=tools,
             tool_choice={"type": "auto"},
             system=system_prompt,
