@@ -144,12 +144,14 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
 def run_microservice(microservice_id: str, flx_unique_id: str, display_name: str = "Task from FlexxiBot") -> dict | None:
     try:
         payload = {
-            "name": display_name,
-            "type": "MICROSERVICE",
-            "microservice_id": microservice_id,
+            "type": "execute_microservice",
             "target": {
-                "type": "WORKSPACES",
+                "type": "workspaces",
                 "ids": [flx_unique_id]
+            },
+            "expiration_in_seconds": 600,
+            "payload": {
+                "microservice_id": microservice_id
             }
         }
 
@@ -163,7 +165,7 @@ def run_microservice(microservice_id: str, flx_unique_id: str, display_name: str
         )
 
         print(f"DEBUG runMicroservice status: {response.status_code}")
-        print(f"DEBUG runMicroservice response: {response.text[:300]}")
+        print(f"DEBUG runMicroservice response: {response.text}")
 
         if response.ok:
             return response.json() if response.text else {"ok": True}
