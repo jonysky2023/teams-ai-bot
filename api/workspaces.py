@@ -1,13 +1,7 @@
 import os
 import requests
 
-# ─── Configuración Gen 2 ───────────────────────────────────────────────────────
-# Variables de entorno necesarias en Vercel:
-#   FLEXXIBLE_API_KEY   → API key de Flexxible Gen 2
-#   FLEXXIBLE_ORG_ID    → organization_id de tu organización
-#   DEFAULT_DEVICE      → nombre del dispositivo (ya existía)
-
-API_BASE = "https://api.flexxible.net/v1"  # Gen 2, versión v1
+API_BASE = "https://api.flexxible.net/v1"
 
 def _headers() -> dict:
     return {
@@ -19,61 +13,37 @@ def _headers() -> dict:
 def _org_id() -> str:
     return os.environ["FLEXXIBLE_ORG_ID"]
 
-
-# ─── Workspaces ───────────────────────────────────────────────────────────────
-
 def get_workspace(name: str) -> dict:
-    """Compatibilidad con el código anterior — devuelve config básica."""
     return {"name": name}
 
-
 def find_workspace(device_name: str) -> dict | None:
-    """Busca un workspace por nombre/FullName usando la API Gen 2."""
     if not device_name:
         return None
-
     try:
-        # Filtro JSON según estructura AST de FilterNode de Flexxible Gen 2
-        import json
-        filter_str = json.dumps({
-            "field": "name",
-            "operator": "contains",
-            "value": device_name
-        })
-
         response = requests.get(
             f"{API_BASE}/workspaces",
             headers=_headers(),
             params={
                 "organizationId": _org_id(),
-                "filter": filter_str,
-                "pageSize": 10
+                "pageSize": 50
             },
             timeout=10
         )
-
         if not response.ok:
             print(f"Flexxible API error: {response.status_code} {response.text[:200]}")
             return None
 
         data = response.json()
-        items = data.get("items", data.get("data", []))
-
-        if not items:
-            return None
+        items = data.get("data", [])
 
         device_name_lower = device_name.lower()
 
-        # Coincidencia exacta primero
         for item in items:
-            name_field = item.get("name", item.get("fullName", item.get("FullName", "")))
-            if name_field.lower() == device_name_lower:
+            if item.get("name", "").lower() == device_name_lower:
                 return item
 
-        # Coincidencia parcial
         for item in items:
-            name_field = item.get("name", item.get("fullName", item.get("FullName", "")))
-            if device_name_lower in name_field.lower():
+            if device_name_lower in item.get("name", "").lower():
                 return item
 
         return None
@@ -84,67 +54,90 @@ def find_workspace(device_name: str) -> dict | None:
 
 
 def fetch_device_status(device_name: str, workspace_name: str = "default") -> dict | None:
-    """Obtiene el estado del workspace/dispositivo desde Gen 2."""
     device = find_workspace(device_name)
     if not device:
         return None
 
-    # Gen 2 usa snake_case en los campos — mapeamos los conocidos
-    # y hacemos fallback a los campos legacy por compatibilidad
-    def g(key_new, key_old=None, default="N/A"):
-        return device.get(key_new, device.get(key_old, default) if key_old else default)
-
     return {
-        "full_name":            g("name", "FullName"),
-        "user":                 g("userName", "UserName"),
-        "flexxible_mid":        g("id", "FlexxibleMID"),
+        # Identidad
+        "full_name":            device.get("name", "N/A"),
+        "user":                 device.get("user_name", "N/A"),
+        "workspace_id":         device.get("workspace_id", "N/A"),
 
-        "power_state":          g("powerState", "PowerState"),
-        "agent_status":         g("agentStatus", "FlexxAgentStatus"),
-        "agent_version":        g("agentVersion", "FlexxAgentVersion"),
-        "last_report":          g("lastReport", "FlexxAgentLastReport"),
-        "last_seen":            g("lastSeen", "LastTime"),
-        "last_restart_days":    g("lastRestartInDays", "LastRestartInDays"),
-        "reboot_pending":       g("rebootPending", "RebootPending"),
-        "sessions":             g("sessionsCount", "SessionsCount"),
-        "idle_time":            g("idleTime", "IdleTime"),
+        # Estado y conectividad
+        "status":               device.get("status", "N/A"),
+        "power_state":          device.get("power_state", "N/A"),
+        "agent_status":         device.get("flexxagent_status", "N/A"),
+        "agent_version":        device.get("flexxagent_version", "N/A"),
+        "last_connection":      device.get("last_connection_time", "N/A"),
+        "last_restart":         device.get("last_restart_time", "N/A"),
+        "reboot_pending":       device.get("os_reboot_pending", "N/A"),
+        "sessions":             device.get("sessions_count", "N/A"),
 
-        "ip":                   g("ip", "IP"),
-        "public_ip":            g("publicIp", "PublicIP"),
-        "mac":                  g("macAddress", "MACAddress"),
-        "network_type":         g("networkInterfaceType", "NetworkInterfaceType"),
-        "wifi_signal":          g("connectionSignal", "ConnectionSignal"),
+        # Red
+        "ip":                   device.get("ip_address", "N/A"),
+        "public_ip":            device.get("public_ip", "N/A"),
+        "mac":                  device.get("wake_on_lan_mac", "N/A"),
+        "subnet":               device.get("current_subnet", "N/A"),
+        "gateway":              device.get("default_gateway", "N/A"),
+        "network_type":         device.get("network_interface_type", "N/A"),
+        "wifi_signal":          device.get("network_signal", "N/A"),
 
-        "cpu":                  g("cpu", "CPU"),
-        "memory":               g("percentRam", "PercentRAM"),
-        "max_ram_gb":           g("maxRam", "MaxRAM"),
-        "disk_pct":             g("bootHardDiskUsedPercentage", "BootHardDiskUsedPercentage"),
-        "disk_detail":          g("hardDiskCSize", "HardDiskCSize"),
+        # Hardware
+        "cpu":                  device.get("percent_cpu", "N/A"),
+        "memory":               device.get("percent_ram", "N/A"),
+        "total_ram_mb":         device.get("total_ram", "N/A"),
+        "cores":                device.get("cores_count", "N/A"),
+        "disk_pct":             device.get("boot_hard_disk_used_percentage", "N/A"),
+        "processor":            device.get("processor", "N/A"),
+        "is_physical":          device.get("is_physical", "N/A"),
+        "is_laptop":            device.get("is_laptop", "N/A"),
+        "hypervisor":           device.get("hypervisor", "N/A"),
+        "last_boot_duration":   device.get("last_boot_duration", "N/A"),
 
-        "os":                   g("operatingSystem", "OperatingSystem"),
-        "os_build":             g("osBuildNumber", "OSBuildNumber"),
-        "last_windows_update":  g("lastWindowsUpdate", "LastWindowsUpdate"),
-        "days_since_update":    g("lastWindowsUpdateInDays", "LastWindowsUpdateInDays"),
+        # Sistema operativo
+        "os":                   device.get("operating_system", "N/A"),
+        "os_build":             device.get("os_build_number", "N/A"),
+        "windows_type":         device.get("windows_type", "N/A"),
+        "last_windows_update":  device.get("last_windows_update", "N/A"),
+        "days_since_update":    device.get("os_update_num_days_since_last", "N/A"),
+        "pending_updates":      device.get("os_update_num_pending", "N/A"),
+        "fast_startup":         device.get("os_fast_startup", "N/A"),
 
-        "antivirus":            g("antivirus", "Antivirus"),
-        "antivirus_status":     g("antivirusStatus", "AntivirusStatus"),
-        "crowdstrike":          g("crowdStrikeStatus", "CrowdStrikeStatus"),
-        "compliance":           g("complianceResult", "ComplianceResult"),
+        # Seguridad
+        "antivirus":            device.get("antivirus", "N/A"),
+        "antivirus_status":     device.get("antivirus_status", "N/A"),
+        "antivirus_version":    device.get("antivirus_version_number", "N/A"),
+        "edr":                  device.get("edr", "N/A"),
+        "edr_status":           device.get("edr_status", "N/A"),
+        "compliance":           device.get("compliance_result", "N/A"),
+        "encrypted_disks":      device.get("encrypted_harddisks", "N/A"),
+        "secure_boot":          device.get("secure_boot_state", "N/A"),
 
-        "city":                 g("city", "City"),
-        "country":              g("country", "Country"),
-        "department":           g("department", "Department"),
-        "reporting_group":      g("reportingGroup", "ReportingGroup"),
-        "tenant":               g("tenant", "RGTenant"),
+        # BIOS
+        "bios_version":         device.get("bios_version", "N/A"),
+        "bios_manufacturer":    device.get("bios_manufacturer", "N/A"),
+        "bios_serial":          device.get("bios_serialnumber", "N/A"),
+
+        # Ubicación y organización
+        "department":           device.get("department", "N/A"),
+        "office":               device.get("office", "N/A"),
+        "area":                 device.get("area", "N/A"),
+        "domain":               device.get("domain_name", "N/A"),
+        "ou":                   device.get("ou", "N/A"),
+
+        # IoT / Agente
+        "iot_status":           device.get("iot_hub_config_sync_status", "N/A"),
+        "broker":               device.get("broker", "N/A"),
+        "broker_status":        device.get("broker_status", "N/A"),
+        "num_alerts":           device.get("num_alerts", "N/A"),
     }
 
-
-# ─── Microservicios ───────────────────────────────────────────────────────────
 
 def run_microservice(microservice_id: str, flx_unique_id: str, display_name: str = "Task from FlexxiBot") -> dict | None:
     """
     Ejecuta un microservicio en un dispositivo via Flexxible API Gen 2.
-    Gen 2 usa el endpoint de Operaciones para ejecutar microservicios.
+    Usa workspace_id como target.
     """
     try:
         payload = {
