@@ -38,17 +38,46 @@ def send_slack_message(channel: str, text: str):
 
 
 def format_device_data(status: dict) -> str:
+    if not status:
+        return "Sin datos del dispositivo."
+
+    priority_keys = [
+        "status", "power_state", "cpu", "memory", "disk_pct",
+        "pending_updates", "days_since_update", "reboot_pending",
+        "sessions", "last_restart", "antivirus_status",
+        "agent_status", "os", "total_ram_mb", "processor"
+    ]
+
+    labels = {
+        "status": "Estado",
+        "power_state": "Encendido",
+        "cpu": "CPU %",
+        "memory": "RAM %",
+        "disk_pct": "Disco C: %",
+        "pending_updates": "Actualizaciones pendientes",
+        "days_since_update": "Días sin actualizar",
+        "reboot_pending": "Reinicio pendiente",
+        "sessions": "Sesiones activas",
+        "last_restart": "Último reinicio",
+        "antivirus_status": "Antivirus",
+        "agent_status": "Agente Flexxible",
+        "os": "Sistema operativo",
+        "total_ram_mb": "RAM total (MB)",
+        "processor": "Procesador"
+    }
+
     lines = []
-    for key, value in status.items():
-        if value not in (None, "N/A", "", False, 0) or key in ("cpu", "memory", "disk_pct", "sessions", "idle_time"):
-            lines.append(f"{key}: {value}")
+    for key in priority_keys:
+        value = status.get(key, "N/A")
+        if value not in (None, "N/A", ""):
+            lines.append(f"{labels.get(key, key)}: {value}")
+
     return "\n".join(lines)
 
 
 @app.route("/api", methods=["POST"])
 @app.route("/api/index", methods=["POST"])
 def slack_handler():
-    # Ignorar reintentos automáticos de Slack
     if request.headers.get("X-Slack-Retry-Num"):
         return jsonify({"ok": True}), 200
 
@@ -74,7 +103,7 @@ def slack_handler():
     if not text:
         return jsonify({"error": "No text received"}), 400
 
-    # Comando especial: limpiar pantalla visualmente
+    # Comando especial: limpiar pantalla
     if text.lower().strip() in (
         "limpiar pantalla", "limpiar chat", "clear",
         "/limpiar pantalla", "/limpiar chat", "/clear", "/reset"
@@ -86,6 +115,7 @@ def slack_handler():
             send_slack_message(channel, "🆕 Conversación reiniciada. ¿En qué puedo ayudarte?")
         return jsonify({"ok": True}), 200
 
+    # Deduplicación de eventos
     if event_id:
         if event_id in processed_events:
             return jsonify({"ok": True}), 200
@@ -93,31 +123,38 @@ def slack_handler():
         if len(processed_events) > 1000:
             processed_events.clear()
 
-    # Obtener FLXUniqueID si no lo tenemos cacheado para este canal
-    if channel not in last_flx_unique_id:
-        print(f"DEBUG: Buscando workspace para {DEFAULT_DEVICE}")
-        device_info = find_workspace(DEFAULT_DEVICE)
-        print(f"DEBUG: device_info = {device_info}")
-        if device_info:
-            last_flx_unique_id[channel] = (
-                device_info.get("id") or
-                device_info.get("FLXUniqueID") or
-                device_info.get("FlexxibleMID", "")
-            )
-            print(f"DEBUG: flx_unique_id = {last_flx_unique_id[channel]}")
+    # Obtener workspace_id si no lo tenemos cacheado
+    try:
+        if channel not in last_flx_unique_id:
+            print(f"DEBUG: Buscando workspace para {DEFAULT_DEVICE}")
+            device_info = find_workspace(DEFAULT_DEVICE)
+            print(f"DEBUG: device_info = {device_info}")
+            if device_info:
+                last_flx_unique_id[channel] = (
+                    device_info.get("workspace_id") or
+                    device_info.get("id", "")
+                )
+                print(f"DEBUG: workspace_id = {last_flx_unique_id[channel]}")
+    except Exception as e:
+        print(f"ERROR find_workspace: {e}")
+        traceback.print_exc()
 
-    # Refrescar datos del dispositivo predefinido
-    print(f"DEBUG: Fetching device status para {DEFAULT_DEVICE}")
-    status = fetch_device_status(DEFAULT_DEVICE)
-    print(f"DEBUG: status keys = {list(status.keys()) if status else None}")
-    if status:
-        last_device_data[channel] = status
+    # Refrescar datos del dispositivo
+    try:
+        print(f"DEBUG: Fetching device status para {DEFAULT_DEVICE}")
+        status = fetch_device_status(DEFAULT_DEVICE)
+        print(f"DEBUG: status keys = {list(status.keys()) if status else None}")
+        if status:
+            last_device_data[channel] = status
+    except Exception as e:
+        print(f"ERROR fetch_device_status: {e}")
+        traceback.print_exc()
 
     device_info_str = format_device_data(last_device_data.get(channel, {}))
     microservices_catalog = get_microservices_catalog()
 
     system_prompt = (
-        "Eres un asistente IT que responde preguntas y ejecuta acciones en dispositivos. "
+        "Eres un asistente IT que diagnostica problemas y ejecuta acciones en dispositivos. "
         "Responde SIEMPRE en el idioma del usuario. "
         "Interpreta errores tipográficos: 'cepu' es CPU, 'hdd' o 'disco' es disco duro. "
         "Nunca inventes datos. Sé conciso y usa emojis para hacer la respuesta más legible en Slack. "
@@ -126,9 +163,23 @@ def slack_handler():
         f"Dispositivo activo: '{DEFAULT_DEVICE}'\n\n"
         f"Datos actuales del dispositivo:\n{device_info_str}\n\n"
         f"{microservices_catalog}\n\n"
-        "Cuando el usuario pida ejecutar una acción en su equipo, usa la tool run_microservice "
-        "eligiendo el microservice_id más apropiado del catálogo anterior. "
-        "Pide confirmación al usuario antes de ejecutar cualquier acción.\n\n"
+        "INSTRUCCIONES DE DIAGNÓSTICO:\n"
+        "Cuando el usuario reporte un problema (lentitud, errores, impresora, etc.):\n"
+        "1. Analiza los datos reales del dispositivo que tienes arriba\n"
+        "2. Identifica métricas relevantes para el problema reportado (CPU, RAM, disco, "
+        "actualizaciones pendientes, reinicio pendiente, etc.)\n"
+        "3. Da un diagnóstico concreto basado en esos datos reales, citando los valores exactos\n"
+        "4. Propón la acción más adecuada del catálogo de microservicios disponibles\n"
+        "5. Pide confirmación antes de ejecutar cualquier acción\n\n"
+        "Umbrales de referencia para el diagnóstico:\n"
+        "- CPU > 80% → uso elevado\n"
+        "- RAM > 85% → memoria muy cargada\n"
+        "- Disco > 80% → poco espacio libre\n"
+        "- Actualizaciones pendientes > 0 → equipo desactualizado\n"
+        "- Días sin actualizar > 30 → actualización urgente\n"
+        "- Reinicio pendiente = true → reinicio necesario\n\n"
+        "Nunca des causas genéricas si tienes datos reales. Siempre cita los valores "
+        "concretos del dispositivo en tu diagnóstico.\n\n"
         "CASO ESPECIAL - Enlaces de Zoom: si el usuario menciona que le han pasado un link, "
         "una URL de videollamada, o algo que no sabe abrir y parece un enlace de Zoom "
         "(zoom.us, zoommtg://, etc.), explica que es un enlace de reunión de la aplicación Zoom "
@@ -148,7 +199,7 @@ def slack_handler():
     history = conversation_history[channel][-10:]
 
     try:
-        print(f"DEBUG: Llamando a Claude, mensaje: {text[:50]}")
+        print(f"DEBUG: Llamando a Claude, mensaje: {text[:80]}")
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=600,
@@ -167,13 +218,19 @@ def slack_handler():
 
         slack_message = "No se pudo procesar la solicitud."
 
-        if tool_call and tool_call.name == "run_microservice":
+        if tool_call is None:
+            for block in response.content:
+                if hasattr(block, "text"):
+                    slack_message = block.text
+                    break
+
+        elif tool_call.name == "run_microservice":
             microservice_id = tool_call.input.get("microservice_id")
             microservice_name = tool_call.input.get("microservice_name")
             flx_unique_id = last_flx_unique_id.get(channel, "")
 
             if not flx_unique_id:
-                slack_message = "❌ No tengo el identificador único del dispositivo para ejecutar la acción. Comprueba que el agente Flexxible está activo."
+                slack_message = "❌ No tengo el identificador único del dispositivo. Comprueba que el agente Flexxible está activo."
             else:
                 result = run_microservice(
                     microservice_id=microservice_id,
@@ -187,12 +244,6 @@ def slack_handler():
                     )
                 else:
                     slack_message = f"❌ No se pudo ejecutar *{microservice_name}*. Comprueba que el dispositivo está online y el agente activo."
-
-        elif tool_call is None:
-            for block in response.content:
-                if hasattr(block, "text"):
-                    slack_message = block.text
-                    break
 
         conversation_history[channel].append({
             "role": "assistant",
