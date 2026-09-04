@@ -1,11 +1,12 @@
 import os
+import json
 import requests
 
 API_BASE = "https://api.flexxible.net/v1"
 
 def _headers() -> dict:
     return {
-        "x-api-key": os.environ["FLEXXIBLE_API_KEY"],
+        "Authorization": f"Bearer {os.environ['FLEXXIBLE_API_KEY']}",
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
@@ -13,28 +14,43 @@ def _headers() -> dict:
 def _org_id() -> str:
     return os.environ["FLEXXIBLE_ORG_ID"]
 
+
 def get_workspace(name: str) -> dict:
     return {"name": name}
+
 
 def find_workspace(device_name: str) -> dict | None:
     if not device_name:
         return None
     try:
+        filters = json.dumps({
+            "field": "name",
+            "op": "contains",
+            "value": device_name
+        })
+
         response = requests.get(
-            f"{API_BASE}/workspaces",
+            f"{API_BASE}/organizations/{_org_id()}/workspaces",
             headers=_headers(),
             params={
-                "organizationId": _org_id(),
-                "pageSize": 50
+                "filters": filters,
+                "per_page": 10
             },
             timeout=10
         )
+
+        print(f"DEBUG find_workspace status: {response.status_code}")
+        print(f"DEBUG find_workspace response: {response.text[:300]}")
+
         if not response.ok:
             print(f"Flexxible API error: {response.status_code} {response.text[:200]}")
             return None
 
         data = response.json()
         items = data.get("data", [])
+
+        if not items:
+            return None
 
         device_name_lower = device_name.lower()
 
@@ -59,12 +75,10 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         return None
 
     return {
-        # Identidad
         "full_name":            device.get("name", "N/A"),
         "user":                 device.get("user_name", "N/A"),
         "workspace_id":         device.get("workspace_id", "N/A"),
 
-        # Estado y conectividad
         "status":               device.get("status", "N/A"),
         "power_state":          device.get("power_state", "N/A"),
         "agent_status":         device.get("flexxagent_status", "N/A"),
@@ -74,7 +88,6 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         "reboot_pending":       device.get("os_reboot_pending", "N/A"),
         "sessions":             device.get("sessions_count", "N/A"),
 
-        # Red
         "ip":                   device.get("ip_address", "N/A"),
         "public_ip":            device.get("public_ip", "N/A"),
         "mac":                  device.get("wake_on_lan_mac", "N/A"),
@@ -83,7 +96,6 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         "network_type":         device.get("network_interface_type", "N/A"),
         "wifi_signal":          device.get("network_signal", "N/A"),
 
-        # Hardware
         "cpu":                  device.get("percent_cpu", "N/A"),
         "memory":               device.get("percent_ram", "N/A"),
         "total_ram_mb":         device.get("total_ram", "N/A"),
@@ -95,7 +107,6 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         "hypervisor":           device.get("hypervisor", "N/A"),
         "last_boot_duration":   device.get("last_boot_duration", "N/A"),
 
-        # Sistema operativo
         "os":                   device.get("operating_system", "N/A"),
         "os_build":             device.get("os_build_number", "N/A"),
         "windows_type":         device.get("windows_type", "N/A"),
@@ -104,7 +115,6 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         "pending_updates":      device.get("os_update_num_pending", "N/A"),
         "fast_startup":         device.get("os_fast_startup", "N/A"),
 
-        # Seguridad
         "antivirus":            device.get("antivirus", "N/A"),
         "antivirus_status":     device.get("antivirus_status", "N/A"),
         "antivirus_version":    device.get("antivirus_version_number", "N/A"),
@@ -114,19 +124,16 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
         "encrypted_disks":      device.get("encrypted_harddisks", "N/A"),
         "secure_boot":          device.get("secure_boot_state", "N/A"),
 
-        # BIOS
         "bios_version":         device.get("bios_version", "N/A"),
         "bios_manufacturer":    device.get("bios_manufacturer", "N/A"),
         "bios_serial":          device.get("bios_serialnumber", "N/A"),
 
-        # Ubicación y organización
         "department":           device.get("department", "N/A"),
         "office":               device.get("office", "N/A"),
         "area":                 device.get("area", "N/A"),
         "domain":               device.get("domain_name", "N/A"),
         "ou":                   device.get("ou", "N/A"),
 
-        # IoT / Agente
         "iot_status":           device.get("iot_hub_config_sync_status", "N/A"),
         "broker":               device.get("broker", "N/A"),
         "broker_status":        device.get("broker_status", "N/A"),
@@ -135,24 +142,18 @@ def fetch_device_status(device_name: str, workspace_name: str = "default") -> di
 
 
 def run_microservice(microservice_id: str, flx_unique_id: str, display_name: str = "Task from FlexxiBot") -> dict | None:
-    """
-    Ejecuta un microservicio en un dispositivo via Flexxible API Gen 2.
-    Usa workspace_id como target.
-    """
     try:
         payload = {
-            "organizationId": _org_id(),
             "name": display_name,
-            "type": "MICROSERVICE",
-            "microserviceId": microservice_id,
-            "scope": {
-                "type": "WORKSPACE",
-                "workspaceIds": [flx_unique_id]
+            "microservice_id": microservice_id,
+            "target": {
+                "type": "WORKSPACES",
+                "ids": [flx_unique_id]
             }
         }
 
         response = requests.post(
-            f"{API_BASE}/operations",
+            f"{API_BASE}/organizations/{_org_id()}/operations",
             headers=_headers(),
             json=payload,
             timeout=15
