@@ -123,18 +123,15 @@ def slack_handler():
         if len(processed_events) > 1000:
             processed_events.clear()
 
-    # Obtener workspace_id si no lo tenemos cacheado
+    # Obtener id del dispositivo si no lo tenemos cacheado
     try:
         if channel not in last_flx_unique_id:
             print(f"DEBUG: Buscando workspace para {DEFAULT_DEVICE}")
             device_info = find_workspace(DEFAULT_DEVICE)
-            print(f"DEBUG: device_info = {device_info}")
+            print(f"DEBUG: device_info id = {device_info.get('id') if device_info else None}")
             if device_info:
-                last_flx_unique_id[channel] = (
-                    device_info.get("workspace_id") or
-                    device_info.get("id", "")
-                )
-                print(f"DEBUG: workspace_id = {last_flx_unique_id[channel]}")
+                last_flx_unique_id[channel] = device_info.get("id", "")
+                print(f"DEBUG: flx_id = {last_flx_unique_id[channel]}")
     except Exception as e:
         print(f"ERROR find_workspace: {e}")
         traceback.print_exc()
@@ -235,6 +232,7 @@ def slack_handler():
             microservice_id = tool_call.input.get("microservice_id")
             microservice_name = tool_call.input.get("microservice_name")
             flx_unique_id = last_flx_unique_id.get(channel, "")
+            print(f"DEBUG: Ejecutando microservicio {microservice_id} en {flx_unique_id}")
 
             if not flx_unique_id:
                 slack_message = "❌ No tengo el identificador único del dispositivo. Comprueba que el agente Flexxible está activo."
