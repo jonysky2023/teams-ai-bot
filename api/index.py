@@ -139,7 +139,7 @@ def slack_handler():
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-5",
+            model="claude-sonnet-4-6",
             max_tokens=600,
             tools=tools,
             tool_choice={"type": "auto"},
