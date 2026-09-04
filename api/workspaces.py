@@ -145,12 +145,15 @@ def run_microservice(microservice_id: str, flx_unique_id: str, display_name: str
     try:
         payload = {
             "name": display_name,
+            "type": "MICROSERVICE",
             "microservice_id": microservice_id,
             "target": {
                 "type": "WORKSPACES",
                 "ids": [flx_unique_id]
             }
         }
+
+        print(f"DEBUG runMicroservice payload: {json.dumps(payload)}")
 
         response = requests.post(
             f"{API_BASE}/organizations/{_org_id()}/operations",
